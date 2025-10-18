@@ -7,55 +7,6 @@ import Link from "next/link";
 export default function CTASection() {
   return (
     <div className="relative z-30 px-4 pt-10 md:pt-32 pb-0 mt-20 bg-transparent">
-      {/* Decorative Floating Labels */}
-      <div className="absolute top-20 left-10 md:left-20">
-        <div 
-          className="px-3 py-1.5 rounded-md text-xs font-medium"
-          style={{ 
-            backgroundColor: "#022B3A", 
-            color: "#F9F9F9",
-            fontFamily: "var(--font-space-grotesk)"
-          }}
-        >
-          Sketch
-        </div>
-      </div>
-      <div className="absolute top-32 md:top-40 left-20 md:left-32">
-        <div 
-          className="px-3 py-1.5 rounded-md text-xs font-medium"
-          style={{ 
-            backgroundColor: "#022B3A", 
-            color: "#F9F9F9",
-            fontFamily: "var(--font-space-grotesk)"
-          }}
-        >
-          Atlassian
-        </div>
-      </div>
-      <div className="absolute top-20 right-20 md:right-32">
-        <div 
-          className="px-3 py-1.5 rounded-md text-xs font-medium"
-          style={{ 
-            backgroundColor: "#022B3A", 
-            color: "#F9F9F9",
-            fontFamily: "var(--font-space-grotesk)"
-          }}
-        >
-          MongoDB
-        </div>
-      </div>
-      <div className="absolute top-36 md:top-44 right-10 md:right-20">
-        <div 
-          className="px-3 py-1.5 rounded-md text-xs font-medium"
-          style={{ 
-            backgroundColor: "#022B3A", 
-            color: "#F9F9F9",
-            fontFamily: "var(--font-space-grotesk)"
-          }}
-        >
-          Descript
-        </div>
-      </div>
 
       {/* Main CTA Content */}
       <div className="relative max-w-2xl mx-auto text-center">

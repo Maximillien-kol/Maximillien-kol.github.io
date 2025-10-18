@@ -48,7 +48,7 @@ export default function WaitlistPage() {
               color: "#022B3A" 
             }}
           >
-            Everything start on wait
+            Be the first to try. 
           </h1>
 
           {/* Form */}
@@ -92,22 +92,74 @@ export default function WaitlistPage() {
               <select
                 name="interest"
                 required
-                className="flex-1 border-b-2 border-t-0 border-l-0 border-r-0 rounded-none bg-transparent px-0 py-2 text-lg focus:outline-none focus:ring-0"
+                className="flex-1 border-b-2 border-t-0 border-l-0 border-r-0 rounded-none bg-transparent px-0 py-2 text-lg focus:outline-none focus:ring-0 cursor-pointer transition-all duration-200 hover:border-opacity-80"
+                style={{ 
+                  fontFamily: "var(--font-space-grotesk)",
+                  color: "#022B3A",
+                  borderColor: "#022B3A",
+                  appearance: "none",
+                  backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23022B3A' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`,
+                  backgroundRepeat: "no-repeat",
+                  backgroundPosition: "right 0.5rem center",
+                  backgroundSize: "1.5em 1.5em",
+                  paddingRight: "2.5rem"
+                }}
+              >
+                <option value="" disabled style={{ color: "#999" }}>Select an option</option>
+                <option value="White-label">White-label Solution</option>
+                <option value="demo">Product Demo</option>
+                <option value="support">Technical Support</option>
+                <option value="partnership">Partnership Opportunity</option>
+              </select>
+            </div>
+
+            {/* Second Row - Role and Company */}
+            <div className="flex flex-col md:flex-row items-start md:items-center gap-6 md:gap-4">
+              <span 
+                className="text-lg md:text-xl whitespace-nowrap"
+                style={{ 
+                  fontFamily: "var(--font-space-grotesk)", 
+                  color: "#022B3A" 
+                }}
+              >
+               And I am
+              </span>
+              <Input
+                type="text"
+                name="role"
+                placeholder="Enter Your Role"
+                required
+                className="flex-1 border-b-2 border-t-0 border-l-0 border-r-0 rounded-none bg-transparent px-0 text-lg focus-visible:ring-0 focus-visible:ring-offset-0"
                 style={{ 
                   fontFamily: "var(--font-space-grotesk)",
                   color: "#022B3A",
                   borderColor: "#022B3A"
                 }}
+              />
+              <span 
+                className="text-lg md:text-xl whitespace-nowrap"
+                style={{ 
+                  fontFamily: "var(--font-space-grotesk)", 
+                  color: "#022B3A" 
+                }}
               >
-                <option value="">Select Dropdown</option>
-                <option value="White-label">White-label</option>
-                <option value="demo">Product Demo</option>
-                <option value="support">Technical Support</option>
-                <option value="partnership">Partnership</option>
-              </select>
+                at
+              </span>
+              <Input
+                type="text"
+                name="company"
+                placeholder="Enter Your Company"
+                required
+                className="flex-1 border-b-2 border-t-0 border-l-0 border-r-0 rounded-none bg-transparent px-0 text-lg focus-visible:ring-0 focus-visible:ring-offset-0"
+                style={{ 
+                  fontFamily: "var(--font-space-grotesk)",
+                  color: "#022B3A",
+                  borderColor: "#022B3A"
+                }}
+              />
             </div>
 
-            {/* Second Row - Email */}
+            {/* Third Row - Email */}
             <div className="flex flex-col md:flex-row items-start md:items-center gap-6 md:gap-4">
               <span 
                 className="text-lg md:text-xl whitespace-nowrap"
@@ -144,7 +196,7 @@ export default function WaitlistPage() {
                 id="terms"
                 name="terms"
                 required
-                className="mt-1 border-2 rounded-sm data-[state=checked]:bg-[#022B3A] data-[state=checked]:border-[#022B3A]"
+                className="mt-1 border-2 rounded-lg data-[state=checked]:bg-[#022B3A] data-[state=checked]:border-[#022B3A]"
                 style={{ borderColor: "#022B3A" }}
               />
               <label
@@ -155,7 +207,7 @@ export default function WaitlistPage() {
                   color: "#022B3A" 
                 }}
               >
-                I here by accept all terms and conditions.
+                I am here by accept all terms and conditions.
               </label>
             </div>
 
