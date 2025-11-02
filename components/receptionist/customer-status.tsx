@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -25,66 +25,32 @@ import { Textarea } from "@/components/ui/textarea"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Search, Calendar as CalendarIcon, X, Edit, CheckCircle2, Clock } from "lucide-react"
+import { Search, Calendar as CalendarIcon, X, Edit, CheckCircle2, Clock, Activity, User } from "lucide-react"
 import { format } from "date-fns"
 import { cn } from "@/lib/utils"
-
-interface Customer {
-  id: string
-  ticketNumber: string
-  name: string
-  phone: string
-  email?: string
-  service: string
-  priority: "low" | "normal" | "high" | "urgent"
-  status: "waiting" | "in-progress" | "completed" | "cancelled" | "rescheduled"
-  checkInTime: string
-  appointmentDate?: Date
-}
-
-const mockCustomers: Customer[] = [
-  {
-    id: "1",
-    ticketNumber: "T0001",
-    name: "Adit Irwan",
-    phone: "+1 (555) 123-4567",
-    email: "adit@example.com",
-    service: "Account Services",
-    priority: "urgent",
-    status: "in-progress",
-    checkInTime: "09:15 AM",
-  },
-  {
-    id: "2",
-    ticketNumber: "T0002",
-    name: "Arif Brata",
-    phone: "+1 (555) 234-5678",
-    service: "General Inquiry",
-    priority: "normal",
-    status: "waiting",
-    checkInTime: "09:22 AM",
-  },
-  {
-    id: "3",
-    ticketNumber: "T0003",
-    name: "Ardhi Irwandi",
-    phone: "+1 (555) 345-6789",
-    email: "ardhi@example.com",
-    service: "Billing Support",
-    priority: "high",
-    status: "completed",
-    checkInTime: "08:30 AM",
-  },
-]
+import { visitorDb, ticketLifecycleDb } from "@/lib/db/receptionist"
+import { Visitor } from "@/lib/types/receptionist"
+import TicketLifecycleTracker from "./ticket-lifecycle-tracker"
 
 export default function CustomerStatus() {
-  const [customers, setCustomers] = useState<Customer[]>(mockCustomers)
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
+  const [customers, setCustomers] = useState<Visitor[]>([])
+  const [selectedCustomer, setSelectedCustomer] = useState<Visitor | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isLifecycleDialogOpen, setIsLifecycleDialogOpen] = useState(false)
   const [actionType, setActionType] = useState<"reschedule" | "cancel" | "update" | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [date, setDate] = useState<Date>()
   const [actionSuccess, setActionSuccess] = useState(false)
+
+  // Load customers on mount
+  useEffect(() => {
+    loadCustomers()
+  }, [])
+
+  const loadCustomers = () => {
+    const allVisitors = visitorDb.getAll()
+    setCustomers(allVisitors)
+  }
 
   const filteredCustomers = customers.filter(
     (c) =>
@@ -92,30 +58,32 @@ export default function CustomerStatus() {
       c.ticketNumber.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
-  const handleAction = (customer: Customer, type: "reschedule" | "cancel" | "update") => {
+  const handleAction = (customer: Visitor, type: "reschedule" | "cancel" | "update") => {
     setSelectedCustomer(customer)
     setActionType(type)
     setIsDialogOpen(true)
+  }
+
+  const handleViewLifecycle = (customer: Visitor) => {
+    setSelectedCustomer(customer)
+    setIsLifecycleDialogOpen(true)
   }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     
     if (selectedCustomer && actionType) {
-      setCustomers((prev) =>
-        prev.map((c) => {
-          if (c.id === selectedCustomer.id) {
-            if (actionType === "cancel") {
-              return { ...c, status: "cancelled" as const }
-            } else if (actionType === "reschedule") {
-              return { ...c, status: "rescheduled" as const, appointmentDate: date }
-            }
-          }
-          return c
-        })
-      )
+      if (actionType === "cancel") {
+        visitorDb.update(selectedCustomer.id, { status: "cancelled" })
+      } else if (actionType === "reschedule") {
+        visitorDb.update(selectedCustomer.id, { status: "waiting" })
+      } else if (actionType === "update") {
+        visitorDb.update(selectedCustomer.id, { notes: selectedCustomer.notes })
+      }
       
       setActionSuccess(true)
+      loadCustomers() // Refresh the list
+      
       setTimeout(() => {
         setActionSuccess(false)
         setIsDialogOpen(false)
@@ -158,12 +126,12 @@ export default function CustomerStatus() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Search and Filters */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Customer Status Management</CardTitle>
-          <CardDescription>Reschedule, cancel, or update customer tickets</CardDescription>
+      <Card className="rounded-2xl shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-extrabold" style={{ fontFamily: "var(--font-poppins)", color: "#022B3A" }}>Customer Status Management</CardTitle>
+          <CardDescription className="text-sm" style={{ fontFamily: "var(--font-space-grotesk)" }}>Reschedule, cancel, or update customer tickets</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex gap-4">
@@ -172,12 +140,13 @@ export default function CustomerStatus() {
               <Input
                 placeholder="Search by name or ticket number..."
                 className="pl-10"
+                style={{ fontFamily: "var(--font-space-grotesk)" }}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
             <Select defaultValue="all">
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-[180px]" style={{ fontFamily: "var(--font-space-grotesk)" }}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -194,7 +163,7 @@ export default function CustomerStatus() {
       </Card>
 
       {/* Customer List */}
-      <Card>
+      <Card className="rounded-2xl shadow-sm">
         <CardContent className="p-6">
           <ScrollArea className="h-[600px]">
             <div className="space-y-3">
@@ -205,7 +174,7 @@ export default function CustomerStatus() {
                 >
                   {/* Ticket & Avatar */}
                   <div className="flex items-center gap-3">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-[#022B3A] text-white font-bold text-sm">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-[#022B3A] text-white font-extrabold text-sm">
                       {customer.ticketNumber.replace("T", "")}
                     </div>
                     <Avatar>
@@ -218,32 +187,32 @@ export default function CustomerStatus() {
                   {/* Customer Info */}
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
-                      <p className="font-semibold">{customer.name}</p>
-                      <Badge className={cn("text-xs", getStatusColor(customer.status))}>
+                      <p className="font-extrabold" style={{ fontFamily: "var(--font-poppins)", color: "#022B3A" }}>{customer.name}</p>
+                      <Badge className={cn("text-xs", getStatusColor(customer.status))} style={{ fontFamily: "var(--font-space-grotesk)" }}>
                         {customer.status.replace("-", " ")}
                       </Badge>
                     </div>
-                    <p className="text-sm text-muted-foreground mb-2">{customer.service}</p>
-                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                    <p className="text-sm text-muted-foreground mb-2" style={{ fontFamily: "var(--font-space-grotesk)" }}>{customer.purposeOfVisit}</p>
+                    <div className="flex items-center gap-4 text-xs text-muted-foreground" style={{ fontFamily: "var(--font-space-grotesk)" }}>
                       <span className="flex items-center gap-1">
                         <Clock className="h-3 w-3" />
-                        Check-in: {customer.checkInTime}
+                        Check-in: {new Date(customer.checkInTime).toLocaleTimeString()}
                       </span>
                       <span>{customer.phone}</span>
                       {customer.email && <span>{customer.email}</span>}
                     </div>
-                    {customer.appointmentDate && (
+                    {customer.hostStaffName && (
                       <div className="mt-2">
                         <Badge variant="outline" className="text-xs">
-                          <CalendarIcon className="mr-1 h-3 w-3" />
-                          Rescheduled to: {format(customer.appointmentDate, "PPP p")}
+                          <User className="mr-1 h-3 w-3" />
+                          Assigned to: {customer.hostStaffName}
                         </Badge>
                       </div>
                     )}
                   </div>
 
                   {/* Priority */}
-                  <Badge className={cn("text-xs", getPriorityColor(customer.priority))}>
+                  <Badge className={cn("text-xs", getPriorityColor(customer.priority))} style={{ fontFamily: "var(--font-space-grotesk)" }}>
                     {customer.priority}
                   </Badge>
 
@@ -252,17 +221,18 @@ export default function CustomerStatus() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => handleAction(customer, "reschedule")}
-                      disabled={customer.status === "completed" || customer.status === "cancelled"}
+                      onClick={() => handleViewLifecycle(customer)}
+                      style={{ fontFamily: "var(--font-space-grotesk)", backgroundColor: "#022B3A", color: "white" }}
                     >
-                      <CalendarIcon className="mr-2 h-3 w-3" />
-                      Reschedule
+                      <Activity className="mr-2 h-3 w-3" />
+                      Track
                     </Button>
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={() => handleAction(customer, "update")}
                       disabled={customer.status === "completed" || customer.status === "cancelled"}
+                      style={{ fontFamily: "var(--font-space-grotesk)" }}
                     >
                       <Edit className="mr-2 h-3 w-3" />
                       Update
@@ -273,6 +243,7 @@ export default function CustomerStatus() {
                       className="text-red-600 hover:text-red-700"
                       onClick={() => handleAction(customer, "cancel")}
                       disabled={customer.status === "completed" || customer.status === "cancelled"}
+                      style={{ fontFamily: "var(--font-space-grotesk)" }}
                     >
                       <X className="mr-2 h-3 w-3" />
                       Cancel
@@ -291,12 +262,12 @@ export default function CustomerStatus() {
           {!actionSuccess ? (
             <>
               <DialogHeader>
-                <DialogTitle>
+                <DialogTitle style={{ fontFamily: "var(--font-poppins)", color: "#022B3A" }}>
                   {actionType === "reschedule" && "Reschedule Appointment"}
                   {actionType === "cancel" && "Cancel Ticket"}
                   {actionType === "update" && "Update Ticket"}
                 </DialogTitle>
-                <DialogDescription>
+                <DialogDescription style={{ fontFamily: "var(--font-space-grotesk)" }}>
                   {selectedCustomer?.ticketNumber} - {selectedCustomer?.name}
                 </DialogDescription>
               </DialogHeader>
@@ -306,7 +277,7 @@ export default function CustomerStatus() {
                   {actionType === "reschedule" && (
                     <>
                       <div className="space-y-2">
-                        <Label>New Date</Label>
+                        <Label style={{ fontFamily: "var(--font-space-grotesk)" }}>New Date</Label>
                         <Popover>
                           <PopoverTrigger asChild>
                             <Button
@@ -326,7 +297,7 @@ export default function CustomerStatus() {
                         </Popover>
                       </div>
                       <div className="space-y-2">
-                        <Label>New Time</Label>
+                        <Label style={{ fontFamily: "var(--font-space-grotesk)" }}>New Time</Label>
                         <Select defaultValue="09:00">
                           <SelectTrigger>
                             <SelectValue />
@@ -345,16 +316,16 @@ export default function CustomerStatus() {
 
                   {actionType === "cancel" && (
                     <div className="space-y-2">
-                      <Label>Cancellation Reason</Label>
-                      <Textarea placeholder="Optional: Provide a reason for cancellation..." />
+                      <Label style={{ fontFamily: "var(--font-space-grotesk)" }}>Cancellation Reason</Label>
+                      <Textarea placeholder="Optional: Provide a reason for cancellation..." style={{ fontFamily: "var(--font-space-grotesk)" }} />
                     </div>
                   )}
 
                   {actionType === "update" && (
                     <>
                       <div className="space-y-2">
-                        <Label>Service Type</Label>
-                        <Select defaultValue={selectedCustomer?.service}>
+                        <Label style={{ fontFamily: "var(--font-space-grotesk)" }}>Service Type</Label>
+                        <Select defaultValue={selectedCustomer?.purposeOfVisit}>
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
@@ -367,7 +338,7 @@ export default function CustomerStatus() {
                         </Select>
                       </div>
                       <div className="space-y-2">
-                        <Label>Priority</Label>
+                        <Label style={{ fontFamily: "var(--font-space-grotesk)" }}>Priority</Label>
                         <Select defaultValue={selectedCustomer?.priority}>
                           <SelectTrigger>
                             <SelectValue />
@@ -381,18 +352,18 @@ export default function CustomerStatus() {
                         </Select>
                       </div>
                       <div className="space-y-2">
-                        <Label>Notes</Label>
-                        <Textarea placeholder="Add any additional notes..." />
+                        <Label style={{ fontFamily: "var(--font-space-grotesk)" }}>Notes</Label>
+                        <Textarea placeholder="Add any additional notes..." style={{ fontFamily: "var(--font-space-grotesk)" }} />
                       </div>
                     </>
                   )}
                 </div>
 
                 <div className="flex justify-end gap-3">
-                  <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                  <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)} style={{ fontFamily: "var(--font-space-grotesk)" }}>
                     Cancel
                   </Button>
-                  <Button type="submit" style={{ backgroundColor: "#022B3A" }}>
+                  <Button type="submit" style={{ backgroundColor: "#022B3A", fontFamily: "var(--font-space-grotesk)" }}>
                     Confirm {actionType}
                   </Button>
                 </div>
@@ -401,16 +372,38 @@ export default function CustomerStatus() {
           ) : (
             <div className="flex flex-col items-center justify-center py-12">
               <CheckCircle2 className="h-16 w-16 text-green-500 mb-4" />
-              <h3 className="text-2xl font-bold mb-2">Success!</h3>
-              <p className="text-muted-foreground">
+              <h3 className="text-2xl font-extrabold mb-2" style={{ fontFamily: "var(--font-poppins)", color: "#022B3A" }}>Success!</h3>
+              <p className="text-muted-foreground" style={{ fontFamily: "var(--font-space-grotesk)" }}>
                 {actionType === "cancel" && "Ticket has been cancelled"}
                 {actionType === "reschedule" && "Appointment has been rescheduled"}
                 {actionType === "update" && "Ticket has been updated"}
               </p>
-              <p className="text-sm text-muted-foreground mt-2">
+              <p className="text-sm text-muted-foreground mt-2" style={{ fontFamily: "var(--font-space-grotesk)" }}>
                 Customer will be notified via SMS/Email
               </p>
             </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Ticket Lifecycle Tracker Dialog */}
+      <Dialog open={isLifecycleDialogOpen} onOpenChange={setIsLifecycleDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-extrabold text-2xl" style={{ fontFamily: "var(--font-poppins)", color: "#022B3A" }}>
+              Ticket Lifecycle Tracker
+            </DialogTitle>
+            <DialogDescription style={{ fontFamily: "var(--font-space-grotesk)" }}>
+              Complete flow from submission to resolution
+            </DialogDescription>
+          </DialogHeader>
+          {selectedCustomer && (
+            <TicketLifecycleTracker 
+              ticketId={selectedCustomer.id}
+              onUpdate={() => {
+                loadCustomers()
+              }}
+            />
           )}
         </DialogContent>
       </Dialog>

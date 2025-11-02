@@ -105,7 +105,7 @@ export default function Footer() {
               color: "#022B3A" 
             }}
           >
-            Partner
+            Resource
           </h4>
           <ul 
             className="space-y-3 text-sm"

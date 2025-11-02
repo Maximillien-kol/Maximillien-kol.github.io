@@ -1,125 +1,31 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { ArrowRight, CheckCircle2, User, Users } from "lucide-react"
+import { ArrowRight, CheckCircle2, Sparkles, TrendingUp, AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
+import type { Visitor, Staff } from "@/lib/types/receptionist"
+import { visitorDb, staffDb, initializeSampleData } from "@/lib/db/receptionist"
 
-interface Employee {
-  id: string
-  name: string
-  counter: string
-  status: "available" | "busy" | "break"
-  currentCustomer?: string
-  customersServed: number
-  specialization: string[]
+interface RoutingSuggestion {
+  visitor: Visitor
+  staff: Staff
+  matchScore: number
+  reason: string
 }
-
-interface QueueCustomer {
-  id: string
-  ticketNumber: string
-  name: string
-  service: string
-  priority: "low" | "normal" | "high" | "urgent"
-}
-
-const mockEmployees: Employee[] = [
-  {
-    id: "1",
-    name: "John Smith",
-    counter: "Counter 1",
-    status: "busy",
-    currentCustomer: "T0001",
-    customersServed: 12,
-    specialization: ["Account Services", "General Inquiry"],
-  },
-  {
-    id: "2",
-    name: "Sarah Wilson",
-    counter: "Counter 2",
-    status: "available",
-    customersServed: 15,
-    specialization: ["Billing Support", "Technical Support"],
-  },
-  {
-    id: "3",
-    name: "Mike Johnson",
-    counter: "Counter 3",
-    status: "busy",
-    currentCustomer: "T0003",
-    customersServed: 10,
-    specialization: ["Consultation", "General Inquiry"],
-  },
-  {
-    id: "4",
-    name: "Emily Davis",
-    counter: "Counter 4",
-    status: "available",
-    customersServed: 13,
-    specialization: ["Account Services", "Billing Support"],
-  },
-  {
-    id: "5",
-    name: "David Brown",
-    counter: "Counter 5",
-    status: "break",
-    customersServed: 8,
-    specialization: ["Technical Support", "Consultation"],
-  },
-]
-
-const mockQueueCustomers: QueueCustomer[] = [
-  {
-    id: "2",
-    ticketNumber: "T0002",
-    name: "Arif Brata",
-    service: "General Inquiry",
-    priority: "normal",
-  },
-  {
-    id: "4",
-    ticketNumber: "T0004",
-    name: "Friza Dipa",
-    service: "Technical Support",
-    priority: "normal",
-  },
-  {
-    id: "5",
-    ticketNumber: "T0005",
-    name: "Sarah Johnson",
-    service: "Consultation",
-    priority: "low",
-  },
-]
 
 export default function RouteCustomer() {
-  const [selectedCustomer, setSelectedCustomer] = useState<QueueCustomer | null>(null)
-  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
+  const [waitingVisitors, setWaitingVisitors] = useState<Visitor[]>([])
+  const [availableStaff, setAvailableStaff] = useState<Staff[]>([])
+  const [allStaff, setAllStaff] = useState<Staff[]>([])
+  const [selectedVisitor, setSelectedVisitor] = useState<Visitor | null>(null)
+  const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null)
   const [routedSuccess, setRoutedSuccess] = useState(false)
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "available":
-        return "bg-green-100 text-green-800"
-      case "busy":
-        return "bg-red-100 text-red-800"
-      case "break":
-        return "bg-yellow-100 text-yellow-800"
-      default:
-        return "bg-gray-100 text-gray-800"
-    }
-  }
+  const [suggestions, setSuggestions] = useState<RoutingSuggestion[]>([])
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -136,149 +42,379 @@ export default function RouteCustomer() {
     }
   }
 
-  const handleRoute = () => {
-    if (selectedCustomer && selectedEmployee) {
+  useEffect(() => {
+    initializeSampleData()
+    loadData()
+  }, [])
+
+  useEffect(() => {
+    if (waitingVisitors.length > 0 && availableStaff.length > 0) {
+      generateSmartSuggestions()
+    }
+  }, [waitingVisitors, availableStaff])
+
+  const loadData = () => {
+    const waiting = visitorDb.getByStatus("waiting")
+    const staff = staffDb.getAll()
+    const available = staff.filter((s) => s.isAvailable)
+    
+    setWaitingVisitors(waiting)
+    setAllStaff(staff)
+    setAvailableStaff(available)
+  }
+
+  const calculateMatchScore = (visitor: Visitor, staff: Staff): number => {
+    let score = 50 // Base score
+    
+    // Priority matching
+    if (visitor.priority === "urgent") score += 30
+    if (visitor.priority === "high") score += 20
+    
+    // Check if staff can handle the service (using department as proxy for specialization)
+    if (visitor.purposeOfVisit.toLowerCase().includes(staff.department.toLowerCase())) {
+      score += 40
+    }
+    
+    // Availability bonus
+    if (staff.isAvailable) score += 20
+    
+    return Math.min(score, 100)
+  }
+
+  const generateSmartSuggestions = () => {
+    const newSuggestions: RoutingSuggestion[] = []
+    
+    waitingVisitors.forEach((visitor) => {
+      type BestMatch = { staff: Staff; score: number; reason: string }
+      let bestMatch: BestMatch | null = null
+      
+      availableStaff.forEach((staff) => {
+        const score = calculateMatchScore(visitor, staff)
+        
+        if (!bestMatch || score > bestMatch.score) {
+          let reason = ""
+          
+          if (visitor.purposeOfVisit.toLowerCase().includes(staff.department.toLowerCase())) {
+            reason = `${staff.department} specialist available`
+          } else if (visitor.priority === "urgent" || visitor.priority === "high") {
+            reason = `Available for ${visitor.priority} priority`
+          } else {
+            reason = "Available and ready to serve"
+          }
+          
+          bestMatch = { staff, score, reason }
+        }
+      })
+      
+      if (bestMatch !== null) {
+        const { staff: matchedStaff, score: matchScore, reason: matchReason } = bestMatch
+        if (matchScore >= 60) {
+          newSuggestions.push({
+            visitor,
+            staff: matchedStaff,
+            matchScore,
+            reason: matchReason,
+          })
+        }
+      }
+    })
+    
+    // Sort by match score and priority
+    newSuggestions.sort((a, b) => {
+      const priorityWeight = { urgent: 4, high: 3, normal: 2, low: 1 }
+      const aPriority = priorityWeight[a.visitor.priority] || 1
+      const bPriority = priorityWeight[b.visitor.priority] || 1
+      
+      if (aPriority !== bPriority) return bPriority - aPriority
+      return b.matchScore - a.matchScore
+    })
+    
+    setSuggestions(newSuggestions.slice(0, 5))
+  }
+
+  const handleRoute = (visitor?: Visitor, staff?: Staff) => {
+    const visitorToRoute = visitor || selectedVisitor
+    const staffToRoute = staff || selectedStaff
+    
+    if (visitorToRoute && staffToRoute) {
+      visitorDb.update(visitorToRoute.id, {
+        status: "in-progress",
+        hostStaffId: staffToRoute.id,
+        hostStaffName: staffToRoute.name,
+      })
+      
       setRoutedSuccess(true)
       setTimeout(() => {
         setRoutedSuccess(false)
-        setSelectedCustomer(null)
-        setSelectedEmployee(null)
+        setSelectedVisitor(null)
+        setSelectedStaff(null)
+        loadData()
       }, 2000)
     }
   }
 
-  const canRoute = selectedCustomer && selectedEmployee && selectedEmployee.status === "available"
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      {/* Instructions Banner */}
+      <Card className="rounded-2xl shadow-sm bg-blue-50 border-blue-200">
+        <CardContent className="p-4">
+          <div className="flex items-start gap-3">
+            <Sparkles className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <h3 className="text-sm font-extrabold mb-2" style={{ fontFamily: "var(--font-poppins)", color: "#022B3A" }}>
+                How Smart Routing Works
+              </h3>
+              <div className="space-y-1 text-xs text-gray-700" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+                <p><strong>Step 1:</strong> Select a waiting customer from the left panel</p>
+                <p><strong>Step 2:</strong> Choose an available staff member from the right panel</p>
+                <p><strong>Step 3:</strong> Click "Route Customer" or use AI suggestions for best matches</p>
+                <p className="text-blue-700 mt-2"><strong>💡 Tip:</strong> AI suggests matches based on department specialization, priority level, and staff availability</p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Success Message */}
       {routedSuccess && (
-        <Card className="border-green-500 bg-green-50">
+        <Card className="rounded-2xl shadow-sm border-green-500 bg-green-50">
           <CardContent className="flex items-center gap-3 p-4">
             <CheckCircle2 className="h-5 w-5 text-green-600" />
-            <p className="font-medium text-green-900">
-              Customer successfully routed! Notification sent.
+            <p className="font-medium text-green-900" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+              Visitor successfully routed! Staff member has been notified.
             </p>
           </CardContent>
         </Card>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Waiting Customers */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Waiting Customers</CardTitle>
-            <CardDescription>Select a customer to route to an available counter</CardDescription>
+      {/* Smart Routing Suggestions */}
+      {suggestions.length > 0 && (
+        <Card className="rounded-2xl shadow-sm border-2 border-[#022B3A]">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-[#022B3A]" />
+              <CardTitle className="text-base font-extrabold" style={{ fontFamily: "var(--font-poppins)", color: "#022B3A" }}>
+                Smart Routing Suggestions
+              </CardTitle>
+            </div>
+            <CardDescription className="text-sm" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+              AI-powered recommendations based on specialization, priority, and availability
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <ScrollArea className="h-[500px]">
-              <div className="space-y-3">
-                {mockQueueCustomers.map((customer) => (
-                  <div
-                    key={customer.id}
-                    className={cn(
-                      "flex items-center gap-4 rounded-lg border p-4 transition-colors hover:bg-gray-50 cursor-pointer",
-                      selectedCustomer?.id === customer.id && "bg-blue-50 border-[#022B3A]"
-                    )}
-                    onClick={() => setSelectedCustomer(customer)}
-                  >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#022B3A] text-white font-bold text-sm">
-                      {customer.ticketNumber.replace("T", "")}
+            <div className="space-y-2">
+              {suggestions.map((suggestion, index) => (
+                <div
+                  key={`${suggestion.visitor.id}-${suggestion.staff.id}`}
+                  className="flex items-center justify-between rounded-lg border p-3 bg-gradient-to-r from-blue-50 to-white hover:from-blue-100 hover:to-blue-50 transition-colors"
+                >
+                  <div className="flex items-center gap-4 flex-1">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#022B3A] text-white text-xs font-extrabold" style={{ fontFamily: "var(--font-poppins)" }}>
+                      #{index + 1}
                     </div>
-                    <div className="flex-1">
-                      <p className="font-semibold">{customer.name}</p>
-                      <p className="text-sm text-muted-foreground">{customer.service}</p>
+                    <div className="flex items-center gap-3">
+                      <div>
+                        <p className="text-sm font-medium" style={{ fontFamily: "var(--font-poppins)" }}>
+                          {suggestion.visitor.name}
+                        </p>
+                        <p className="text-xs text-muted-foreground" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+                          {suggestion.visitor.ticketNumber} • {suggestion.visitor.purposeOfVisit}
+                        </p>
+                      </div>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                      <div>
+                        <p className="text-sm font-medium" style={{ fontFamily: "var(--font-poppins)" }}>
+                          {suggestion.staff.name}
+                        </p>
+                        <p className="text-xs text-muted-foreground" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+                          {suggestion.staff.department} • {suggestion.staff.position}
+                        </p>
+                      </div>
                     </div>
-                    <Badge className={cn("text-xs", getPriorityColor(customer.priority))}>
-                      {customer.priority}
-                    </Badge>
+                    <div className="ml-4 flex items-center gap-2">
+                      <Badge variant="outline" className="flex items-center gap-1" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+                        <TrendingUp className="h-3 w-3" />
+                        {suggestion.matchScore}% match
+                      </Badge>
+                      <Badge className={cn("text-xs", getPriorityColor(suggestion.visitor.priority))} style={{ fontFamily: "var(--font-space-grotesk)" }}>
+                        {suggestion.visitor.priority}
+                      </Badge>
+                    </div>
                   </div>
-                ))}
-              </div>
-            </ScrollArea>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground mr-2" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+                      {suggestion.reason}
+                    </span>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() => handleRoute(suggestion.visitor, suggestion.staff)}
+                      style={{ backgroundColor: "#022B3A", fontFamily: "var(--font-space-grotesk)" }}
+                    >
+                      Auto-Route
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
+      )}
 
-        {/* Available Employees/Counters */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Employees & Counters</CardTitle>
-            <CardDescription>
-              {mockEmployees.filter((e) => e.status === "available").length} available counters
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* Waiting customers */}
+        <Card className="rounded-2xl shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-extrabold" style={{ fontFamily: "var(--font-poppins)", color: "#022B3A" }}>
+              Waiting Customers
+            </CardTitle>
+            <CardDescription className="text-sm" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+              {waitingVisitors.length} Customers{waitingVisitors.length !== 1 ? "s" : ""} waiting to be served
             </CardDescription>
           </CardHeader>
           <CardContent>
             <ScrollArea className="h-[500px]">
               <div className="space-y-3">
-                {mockEmployees.map((employee) => (
-                  <div
-                    key={employee.id}
-                    className={cn(
-                      "rounded-lg border p-4 transition-colors",
-                      employee.status === "available" && "hover:bg-gray-50 cursor-pointer",
-                      employee.status !== "available" && "opacity-60 cursor-not-allowed",
-                      selectedEmployee?.id === employee.id && "bg-blue-50 border-[#022B3A]"
-                    )}
-                    onClick={() => employee.status === "available" && setSelectedEmployee(employee)}
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-3">
-                        <Avatar>
-                          <AvatarFallback className="bg-[#022B3A] text-white">
-                            {employee.name.split(" ").map(n => n[0]).join("")}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="font-semibold">{employee.name}</p>
-                          <p className="text-sm text-muted-foreground">{employee.counter}</p>
-                        </div>
+                {waitingVisitors.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="h-12 w-12 rounded-full bg-gray-100 flex items-center justify-center">
+                        <CheckCircle2 className="h-6 w-6 text-gray-400" />
                       </div>
-                      <Badge className={cn("text-xs", getStatusColor(employee.status))}>
-                        {employee.status}
-                      </Badge>
-                    </div>
-
-                    {employee.currentCustomer && (
-                      <div className="mb-3 rounded bg-gray-100 p-2">
-                        <p className="text-xs text-muted-foreground">Currently serving:</p>
-                        <p className="text-sm font-medium">{employee.currentCustomer}</p>
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">
-                        Served today: <span className="font-medium">{employee.customersServed}</span>
-                      </span>
-                    </div>
-
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {employee.specialization.map((spec) => (
-                        <Badge key={spec} variant="outline" className="text-xs">
-                          {spec}
-                        </Badge>
-                      ))}
+                      <p className="text-sm font-medium text-gray-900" style={{ fontFamily: "var(--font-poppins)" }}>
+                        No customers waiting
+                      </p>
+                      <p className="text-xs text-muted-foreground max-w-xs" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+                        All customers have been assigned to staff or there are no pending tickets. Create a new ticket to get started.
+                      </p>
                     </div>
                   </div>
-                ))}
+                ) : (
+                  waitingVisitors.map((visitor) => (
+                    <div
+                      key={visitor.id}
+                      className={cn(
+                        "flex items-center gap-4 rounded-lg border p-4 transition-colors hover:bg-gray-50 cursor-pointer",
+                        selectedVisitor?.id === visitor.id && "bg-blue-50 border-[#022B3A]"
+                      )}
+                      onClick={() => setSelectedVisitor(visitor)}
+                    >
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#022B3A] text-white font-extrabold text-sm" style={{ fontFamily: "var(--font-poppins)" }}>
+                        {visitor.ticketNumber.replace(/\D/g, "").slice(-4)}
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-extrabold" style={{ fontFamily: "var(--font-poppins)", color: "#022B3A" }}>{visitor.name}</p>
+                        <p className="text-sm text-muted-foreground" style={{ fontFamily: "var(--font-space-grotesk)" }}>{visitor.purposeOfVisit}</p>
+                      </div>
+                      <Badge className={cn("text-xs", getPriorityColor(visitor.priority))} style={{ fontFamily: "var(--font-space-grotesk)" }}>
+                        {visitor.priority}
+                      </Badge>
+                    </div>
+                  ))
+                )}
+              </div>
+            </ScrollArea>
+          </CardContent>
+        </Card>
+
+        {/* Available Staff */}
+        <Card className="rounded-2xl shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-extrabold" style={{ fontFamily: "var(--font-poppins)", color: "#022B3A" }}>
+              Staff Members
+            </CardTitle>
+            <CardDescription className="text-sm" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+              {availableStaff.length} staff member{availableStaff.length !== 1 ? "s" : ""} available
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ScrollArea className="h-[500px]">
+              <div className="space-y-3">
+                {allStaff.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="h-12 w-12 rounded-full bg-gray-100 flex items-center justify-center">
+                        <AlertCircle className="h-6 w-6 text-gray-400" />
+                      </div>
+                      <p className="text-sm font-medium text-gray-900" style={{ fontFamily: "var(--font-poppins)" }}>
+                        No staff members
+                      </p>
+                      <p className="text-xs text-muted-foreground max-w-xs" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+                        Please contact your administrator to add staff members to the system.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  allStaff.map((staff) => (
+                    <div
+                      key={staff.id}
+                      className={cn(
+                        "rounded-lg border p-4 transition-colors",
+                        staff.isAvailable && "hover:bg-gray-50 cursor-pointer",
+                        !staff.isAvailable && "opacity-60 cursor-not-allowed",
+                        selectedStaff?.id === staff.id && "bg-blue-50 border-[#022B3A]"
+                      )}
+                      onClick={() => staff.isAvailable && setSelectedStaff(staff)}
+                    >
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <Avatar>
+                            <AvatarFallback className="bg-[#022B3A] text-white" style={{ fontFamily: "var(--font-poppins)" }}>
+                              {staff.name.split(" ").map((n) => n[0]).join("")}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="font-extrabold" style={{ fontFamily: "var(--font-poppins)", color: "#022B3A" }}>{staff.name}</p>
+                            <p className="text-sm text-muted-foreground" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+                              {staff.position}
+                            </p>
+                          </div>
+                        </div>
+                        <Badge className={cn("text-xs", staff.isAvailable ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800")} style={{ fontFamily: "var(--font-space-grotesk)" }}>
+                          {staff.isAvailable ? "available" : "busy"}
+                        </Badge>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+                            Department:
+                          </span>
+                          <span className="font-medium" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+                            {staff.department}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+                            Contact:
+                          </span>
+                          <span className="font-medium text-xs" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+                            {staff.email}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </ScrollArea>
           </CardContent>
         </Card>
       </div>
 
-      {/* Route Action */}
-      {selectedCustomer && selectedEmployee && (
-        <Card className="border-2 border-dashed border-[#022B3A]">
+      {/* Manual Route Action */}
+      {selectedVisitor && selectedStaff && (
+        <Card className="rounded-2xl shadow-sm border-2 border-dashed border-[#022B3A]">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-[#022B3A] text-white font-bold">
-                    {selectedCustomer.ticketNumber.replace("T", "")}
+                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-[#022B3A] text-white font-extrabold" style={{ fontFamily: "var(--font-poppins)" }}>
+                    {selectedVisitor.ticketNumber.replace(/\D/g, "").slice(-4)}
                   </div>
                   <div>
-                    <p className="font-semibold">{selectedCustomer.name}</p>
-                    <p className="text-sm text-muted-foreground">{selectedCustomer.service}</p>
+                    <p className="font-extrabold" style={{ fontFamily: "var(--font-poppins)", color: "#022B3A" }}>{selectedVisitor.name}</p>
+                    <p className="text-sm text-muted-foreground" style={{ fontFamily: "var(--font-space-grotesk)" }}>{selectedVisitor.purposeOfVisit}</p>
                   </div>
                 </div>
 
@@ -286,62 +422,32 @@ export default function RouteCustomer() {
 
                 <div className="flex items-center gap-3">
                   <Avatar>
-                    <AvatarFallback className="bg-[#022B3A] text-white">
-                      {selectedEmployee.name.split(" ").map(n => n[0]).join("")}
+                    <AvatarFallback className="bg-[#022B3A] text-white" style={{ fontFamily: "var(--font-poppins)" }}>
+                      {selectedStaff.name.split(" ").map((n) => n[0]).join("")}
                     </AvatarFallback>
                   </Avatar>
                   <div>
-                    <p className="font-semibold">{selectedEmployee.name}</p>
-                    <p className="text-sm text-muted-foreground">{selectedEmployee.counter}</p>
+                    <p className="font-extrabold" style={{ fontFamily: "var(--font-poppins)", color: "#022B3A" }}>{selectedStaff.name}</p>
+                    <p className="text-sm text-muted-foreground" style={{ fontFamily: "var(--font-space-grotesk)" }}>
+                      {selectedStaff.department} • {selectedStaff.position}
+                    </p>
                   </div>
                 </div>
               </div>
 
               <Button
                 size="lg"
-                style={{ backgroundColor: "#022B3A" }}
-                onClick={handleRoute}
-                disabled={!canRoute}
+                style={{ backgroundColor: "#022B3A", fontFamily: "var(--font-space-grotesk)" }}
+                onClick={() => handleRoute()}
+                disabled={!selectedVisitor || !selectedStaff || !selectedStaff.isAvailable}
               >
-                Route Customer
+                Route Visitor
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </div>
           </CardContent>
         </Card>
       )}
-
-      {/* Quick Route Suggestions */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Smart Routing Suggestions</CardTitle>
-          <CardDescription>AI-powered recommendations based on specialization and workload</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between rounded-lg border p-3">
-              <div className="flex items-center gap-3">
-                <Users className="h-5 w-5 text-muted-foreground" />
-                <div>
-                  <p className="text-sm font-medium">Arif Brata (T0002) → Sarah Wilson (Counter 2)</p>
-                  <p className="text-xs text-muted-foreground">Match: General Inquiry specialist</p>
-                </div>
-              </div>
-              <Button variant="outline" size="sm">Auto-Route</Button>
-            </div>
-            <div className="flex items-center justify-between rounded-lg border p-3">
-              <div className="flex items-center gap-3">
-                <Users className="h-5 w-5 text-muted-foreground" />
-                <div>
-                  <p className="text-sm font-medium">Friza Dipa (T0004) → Emily Davis (Counter 4)</p>
-                  <p className="text-xs text-muted-foreground">Match: Lowest queue, Technical Support</p>
-                </div>
-              </div>
-              <Button variant="outline" size="sm">Auto-Route</Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   )
 }

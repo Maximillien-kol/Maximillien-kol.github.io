@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   Dialog,
   DialogContent,
@@ -24,33 +24,110 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Badge } from "@/components/ui/badge"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { CalendarIcon, CheckCircle2 } from "lucide-react"
+import { CalendarIcon, CheckCircle2, UserCheck, UserX } from "lucide-react"
 import { format } from "date-fns"
 import { cn } from "@/lib/utils"
+import { visitorDb, staffDb, ticketLifecycleDb } from "@/lib/db/receptionist"
+import { Staff } from "@/lib/types/receptionist"
 
 interface CreateTicketDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  onTicketCreated?: () => void
 }
 
-export default function CreateTicketDialog({ open, onOpenChange }: CreateTicketDialogProps) {
+export default function CreateTicketDialog({ open, onOpenChange, onTicketCreated }: CreateTicketDialogProps) {
   const [visitType, setVisitType] = useState<"walk-in" | "virtual">("walk-in")
   const [date, setDate] = useState<Date>()
   const [ticketCreated, setTicketCreated] = useState(false)
   const [ticketNumber, setTicketNumber] = useState("")
+  const [staff, setStaff] = useState<Staff[]>([])
+  const [selectedStaffId, setSelectedStaffId] = useState<string>("")
+  
+  // Form state
+  const [formData, setFormData] = useState({
+    name: "",
+    phone: "",
+    email: "",
+    idNumber: "",
+    service: "",
+    priority: "normal" as "low" | "normal" | "high" | "urgent",
+    time: "09:00",
+    notes: "",
+  })
 
-  const handleCreateTicket = (e: React.FormEvent) => {
+  // Load staff on component mount
+  useEffect(() => {
+    if (open) {
+      const allStaff = staffDb.getAll()
+      setStaff(allStaff)
+    }
+  }, [open])
+
+  const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Generate ticket number
-    const newTicketNumber = `T${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`
-    setTicketNumber(newTicketNumber)
-    setTicketCreated(true)
     
-    // Reset after 3 seconds
-    setTimeout(() => {
-      setTicketCreated(false)
-      onOpenChange(false)
-    }, 3000)
+    try {
+      // Get selected staff info if assigned
+      const selectedStaff = selectedStaffId ? staff.find(s => s.id === selectedStaffId) : undefined
+      
+      // STEP 1: Submit and Record Ticket
+      const newTicket = ticketLifecycleDb.submitTicket({
+        name: formData.name,
+        phone: formData.phone,
+        email: formData.email || undefined,
+        company: formData.idNumber || undefined, // Using company field for ID number
+        purposeOfVisit: formData.service,
+        priority: formData.priority,
+        hostStaffId: selectedStaffId || undefined,
+        hostStaffName: selectedStaff?.name,
+        checkInTime: new Date().toISOString(),
+        status: "waiting" as const,
+        notes: formData.notes || undefined,
+      })
+      
+      // STEP 2: Categorize and Route Ticket (auto-route if no staff assigned)
+      const routingResult = ticketLifecycleDb.categorizeAndRoute(
+        newTicket.id,
+        !selectedStaffId // Auto-route only if no manual assignment
+      )
+      
+      setTicketNumber(newTicket.ticketNumber)
+      setTicketCreated(true)
+      
+      // Log routing information
+      console.log("✅ Ticket created and routed:", {
+        ticketNumber: newTicket.ticketNumber,
+        category: routingResult.category,
+        assignedTo: routingResult.assignedStaff?.name || selectedStaff?.name || "Unassigned",
+      })
+      
+      // Callback to refresh parent component
+      if (onTicketCreated) {
+        onTicketCreated()
+      }
+      
+      // Reset after 3 seconds
+      setTimeout(() => {
+        setTicketCreated(false)
+        onOpenChange(false)
+        // Reset form
+        setFormData({
+          name: "",
+          phone: "",
+          email: "",
+          idNumber: "",
+          service: "",
+          priority: "normal",
+          time: "09:00",
+          notes: "",
+        })
+        setSelectedStaffId("")
+      }, 3000)
+    } catch (error) {
+      console.error("Error creating ticket:", error)
+      alert("Failed to create ticket. Please try again.")
+    }
   }
 
   return (
@@ -94,47 +171,117 @@ export default function CreateTicketDialog({ open, onOpenChange }: CreateTicketD
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="name">Full Name *</Label>
-                    <Input id="name" placeholder="Enter customer name" required />
+                    <Input 
+                      id="name" 
+                      placeholder="Enter customer name" 
+                      required 
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="phone">Phone Number *</Label>
-                    <Input id="phone" type="tel" placeholder="+1 (555) 000-0000" required />
+                    <Input 
+                      id="phone" 
+                      type="tel" 
+                      placeholder="+1 (555) 000-0000" 
+                      required 
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    />
                   </div>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="email">Email</Label>
-                    <Input id="email" type="email" placeholder="customer@example.com" />
+                    <Input 
+                      id="email" 
+                      type="email" 
+                      placeholder="customer@example.com" 
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="id-number">ID Number</Label>
-                    <Input id="id-number" placeholder="Optional" />
+                    <Input 
+                      id="id-number" 
+                      placeholder="Optional" 
+                      value={formData.idNumber}
+                      onChange={(e) => setFormData({ ...formData, idNumber: e.target.value })}
+                    />
                   </div>
                 </div>
 
                 {/* Service Selection */}
                 <div className="space-y-2">
                   <Label htmlFor="service">Service Required *</Label>
-                  <Select required>
+                  <Select 
+                    required 
+                    value={formData.service}
+                    onValueChange={(value) => setFormData({ ...formData, service: value })}
+                  >
                     <SelectTrigger id="service">
                       <SelectValue placeholder="Select service" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="general">General Inquiry</SelectItem>
-                      <SelectItem value="account">Account Services</SelectItem>
-                      <SelectItem value="billing">Billing Support</SelectItem>
-                      <SelectItem value="technical">Technical Support</SelectItem>
-                      <SelectItem value="consultation">Consultation</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
+                      <SelectItem value="General Inquiry">General Inquiry</SelectItem>
+                      <SelectItem value="Account Services">Account Services</SelectItem>
+                      <SelectItem value="Billing Support">Billing Support</SelectItem>
+                      <SelectItem value="Technical Support">Technical Support</SelectItem>
+                      <SelectItem value="Consultation">Consultation</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+
+                {/* Staff Assignment */}
+                <div className="space-y-2">
+                  <Label htmlFor="staff">Assign to Staff (Optional)</Label>
+                  <Select 
+                    value={selectedStaffId}
+                    onValueChange={setSelectedStaffId}
+                  >
+                    <SelectTrigger id="staff">
+                      <SelectValue placeholder="Select staff member" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {staff.map((member) => (
+                        <SelectItem key={member.id} value={member.id}>
+                          <div className="flex items-center gap-2 w-full">
+                            <span className="flex-1">{member.name}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {member.department}
+                            </span>
+                            {member.isAvailable ? (
+                              <Badge variant="outline" className="bg-green-100 text-green-700 border-green-300">
+                                <UserCheck className="h-3 w-3 mr-1" />
+                                Available
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="bg-red-100 text-red-700 border-red-300">
+                                <UserX className="h-3 w-3 mr-1" />
+                                Busy
+                              </Badge>
+                            )}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Available staff members are ready to assist immediately
+                  </p>
                 </div>
 
                 {/* Priority Level */}
                 <div className="space-y-2">
                   <Label htmlFor="priority">Priority Level</Label>
-                  <Select defaultValue="normal">
+                  <Select 
+                    value={formData.priority}
+                    onValueChange={(value: any) => setFormData({ ...formData, priority: value })}
+                  >
                     <SelectTrigger id="priority">
                       <SelectValue />
                     </SelectTrigger>
@@ -185,7 +332,10 @@ export default function CreateTicketDialog({ open, onOpenChange }: CreateTicketD
                           <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
                         </PopoverContent>
                       </Popover>
-                      <Select defaultValue="09:00">
+                      <Select 
+                        value={formData.time}
+                        onValueChange={(value) => setFormData({ ...formData, time: value })}
+                      >
                         <SelectTrigger className="w-[120px]">
                           <SelectValue />
                         </SelectTrigger>
@@ -208,6 +358,8 @@ export default function CreateTicketDialog({ open, onOpenChange }: CreateTicketD
                     id="notes"
                     placeholder="Any special requirements or notes..."
                     className="min-h-[80px]"
+                    value={formData.notes}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                   />
                 </div>
               </div>
@@ -225,9 +377,9 @@ export default function CreateTicketDialog({ open, onOpenChange }: CreateTicketD
         ) : (
           <div className="flex flex-col items-center justify-center py-12">
             <CheckCircle2 className="h-16 w-16 text-green-500 mb-4" />
-            <h3 className="text-2xl font-bold mb-2">Ticket Created Successfully!</h3>
-            <p className="text-muted-foreground mb-4">Ticket Number:</p>
-            <div className="text-4xl font-bold" style={{ color: "#022B3A" }}>
+            <h3 className="text-2xl font-extrabold mb-2" style={{ fontFamily: "var(--font-poppins)", color: "#022B3A" }}>Ticket Created Successfully!</h3>
+            <p className="text-muted-foreground mb-4" style={{ fontFamily: "var(--font-space-grotesk)" }}>Ticket Number:</p>
+            <div className="text-4xl font-extrabold" style={{ fontFamily: "var(--font-poppins)", color: "#022B3A" }}>
               {ticketNumber}
             </div>
             <p className="text-sm text-muted-foreground mt-4">

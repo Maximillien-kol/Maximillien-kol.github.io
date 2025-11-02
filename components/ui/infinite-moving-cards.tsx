@@ -176,7 +176,7 @@ export const InfiniteMovingCards = ({
               >
                 {/* Author Info with Avatar */}
                 <div className="flex items-center gap-3 mb-4 lg:mb-20">
-                  <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-full overflow-hidden flex-shrink-0" style={{ borderWidth: '2px', borderColor: '#BFDBF7', borderStyle: 'solid' }}>
+                  <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-full overflow-hidden flex-shrink-0" style={{ borderWidth: '0px', borderColor: '#BFDBF7', borderStyle: 'solid' }}>
                     {item.avatar ? (
                       <img 
                         src={item.avatar} 
